@@ -1,0 +1,1918 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>3D Social & Therapy Sanctuary Prototype</title>
+    <!-- Tailwind CSS CDN -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- FontAwesome Icons CDN -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <!-- Three.js Library -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <!-- PeerJS CDN for WebRTC Cross-Device Signaling & Peer Networking -->
+    <script src="https://unpkg.com/peerjs@1.5.2/dist/peerjs.min.js"></script>
+
+    <style>
+    body { margin: 0; padding: 0; overflow: hidden; font-family: 'Inter', system-ui, -apple-system, sans-serif; user-select: none; -webkit-user-select: none; background: #0f172a; color: #f8fafc; touch-action: none; }
+    canvas { display: block; width: 100vw; height: 100vh; }
+    
+    /* UI Glassmorphic Styling */
+    .glass-panel { background: rgba(15, 23, 42, 0.85); backdrop-filter: blur(16px); border: 1px solid rgba(255, 255, 255, 0.12); border-radius: 16px; box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.4); }
+    .glass-button { background: rgba(255, 255, 255, 0.08); border: 1px solid rgba(255, 255, 255, 0.15); transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1); cursor: pointer; touch-action: manipulation; }
+    .glass-button:hover { background: rgba(255, 255, 255, 0.22); transform: translateY(-2px); box-shadow: 0 4px 12px rgba(0,0,0,0.2); }
+    .glass-button:active, .glass-button.pressed { transform: translateY(0); background: rgba(16, 185, 129, 0.4); border-color: rgba(52, 211, 153, 0.8); }
+    .glass-button.active { background: rgba(16, 185, 129, 0.3); border-color: rgba(52, 211, 153, 0.6); }
+    .mic-active { background: rgba(16, 185, 129, 0.35) !important; border-color: #34d399 !important; color: #34d399 !important; animation: pulse-mic 2s infinite; }
+    .mic-muted { background: rgba(239, 68, 68, 0.2) !important; border-color: #f87171 !important; color: #f87171 !important; }
+    @keyframes pulse-mic { 0%, 100% { box-shadow: 0 0 0 0 rgba(52, 211, 153, 0.4); } 50% { box-shadow: 0 0 0 8px rgba(52, 211, 153, 0); } }
+    
+    /* Menu Drawer Backdrop Overlay */
+    #menuOverlay {
+      opacity: 0;
+      pointer-events: none;
+      transition: opacity 0.3s ease-in-out;
+    }
+    #menuOverlay.active {
+      opacity: 1;
+      pointer-events: auto;
+    }
+
+    /* Touch Controls Overlay */
+    .touch-btn {
+      width: 54px;
+      height: 54px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 1.25rem;
+      border-radius: 14px;
+      user-select: none;
+      -webkit-user-select: none;
+      touch-action: none;
+      -webkit-touch-callout: none;
+    }
+    #mobileControlsContainer {
+      touch-action: none;
+      -webkit-touch-callout: none;
+    }
+    </style>
+</head>
+<body class="select-none touch-none">
+
+  <div id="canvas-container" class="w-full h-full relative"></div>
+
+  <!-- Menu Drawer Dark Backdrop Overlay -->
+  <div id="menuOverlay" onclick="toggleMenuDrawer()" class="fixed inset-0 z-40 bg-slate-950/60 backdrop-blur-sm"></div>
+
+  <!-- Top Navigation & Controls Bar -->
+  <div class="fixed top-4 left-4 right-4 z-30 flex justify-between items-center pointer-events-none">
+    <div class="glass-panel px-3 py-2 sm:px-4 sm:py-3 flex items-center space-x-2 sm:space-x-3 pointer-events-auto">
+      <button id="menuToggleBtn" onclick="toggleMenuDrawer()" class="glass-button w-9 h-9 sm:w-10 sm:h-10 rounded-xl flex items-center justify-center text-slate-200 hover:text-white" title="Open Sanctuary Menu">
+        <i class="fas fa-bars text-base sm:text-lg"></i>
+      </button>
+
+      <div class="w-8 h-8 sm:w-10 sm:h-10 rounded-full bg-emerald-500/20 border border-emerald-400 flex items-center justify-center text-emerald-300 font-bold shadow-inner">
+        <i class="fas font-sans text-xs sm:text-sm" id="userAvatar">U</i>
+      </div>
+      <div>
+        <h1 class="font-bold text-xs sm:text-sm leading-tight text-white flex items-center gap-1.5 sm:gap-2">
+          Sanctuary Isle <span class="hidden sm:inline-block bg-emerald-500/30 text-emerald-300 text-[10px] px-2 py-0.5 rounded-full font-mono uppercase">Multiplayer + 3D Voice</span>
+        </h1>
+        <p class="text-[10px] sm:text-xs text-slate-300 flex items-center gap-1.5" id="roomStatus">
+          <span class="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span> Room: <span id="roomNameDisplay" class="font-semibold text-white">Main Deck</span>
+        </p>
+      </div>
+    </div>
+
+    <div class="flex items-center space-x-2 pointer-events-auto">
+      <!-- Mobile Touch Controls Toggle -->
+      <button onclick="toggleMobileControlsManual()" class="glass-button p-2.5 rounded-xl text-xs font-medium text-emerald-300 flex items-center gap-1 sm:hidden" title="Toggle On-Screen Controls">
+        <i class="fas fa-gamepad text-sm"></i>
+      </button>
+
+      <!-- Voice Chat Toggle Button -->
+      <button id="micToggleBtn" class="glass-button mic-muted px-3 py-2 sm:px-4 sm:py-2.5 rounded-xl font-medium text-xs flex items-center gap-2 shadow-lg" title="Toggle Voice Chat">
+        <i class="fas fa-microphone-slash text-xs sm:text-sm" id="micIcon"></i>
+        <span id="micLabel" class="hidden sm:inline">Voice Off</span>
+        <div id="audioMeterContainer" class="hidden w-10 sm:w-12 h-2.5 bg-slate-800/80 rounded-full overflow-hidden border border-slate-700/50 flex items-center px-0.5">
+          <div id="audioMeterBar" class="h-1.5 bg-emerald-400 rounded-full w-0 transition-all duration-75"></div>
+        </div>
+      </button>
+
+      <!-- Dynamic Time of Day Preset Buttons -->
+      <div class="hidden sm:flex items-center space-x-1.5 bg-slate-900/60 p-1 rounded-xl border border-slate-800">
+        <button onclick="setTimeOfDay('day')" class="glass-button px-3 py-1.5 rounded-lg text-xs font-medium text-amber-300 flex items-center gap-1.5" title="Daylight">
+          <i class="fas fa-sun text-amber-400"></i>
+          <span>Day</span>
+        </button>
+        <button onclick="setTimeOfDay('sunset')" class="glass-button px-3 py-1.5 rounded-lg text-xs font-medium text-orange-300 flex items-center gap-1.5" title="Sunset">
+          <i class="fas fa-sun-cloud text-orange-400"></i>
+          <span>Sunset</span>
+        </button>
+        <button onclick="setTimeOfDay('night')" class="glass-button px-3 py-1.5 rounded-lg text-xs font-medium text-indigo-300 flex items-center gap-1.5" title="Night">
+          <i class="fas fa-moon text-indigo-300"></i>
+          <span>Night</span>
+        </button>
+      </div>
+
+      <!-- Switch Room Button -->
+      <button id="switchRoomBtn" onclick="document.getElementById('room-modal').classList.remove('hidden')" class="glass-button px-3 py-2 sm:px-3.5 sm:py-2.5 rounded-xl text-xs font-medium text-slate-200 flex items-center gap-1.5">
+        <i class="fas fa-door-open text-indigo-400"></i>
+        <span class="hidden sm:inline">Rooms</span>
+      </button>
+    </div>
+  </div>
+
+  <!-- Slide-out Navigation & Settings Menu Drawer -->
+  <div id="sideMenuDrawer" class="fixed top-0 left-0 h-full w-80 z-50 glass-panel border-r border-slate-700/80 -translate-x-full transition-transform duration-300 ease-in-out p-6 flex flex-col justify-between shadow-2xl pointer-events-auto overflow-y-auto">
+    <div class="space-y-6">
+      <div class="flex items-center justify-between border-b border-slate-700/60 pb-4">
+        <div class="flex items-center gap-3">
+          <div class="w-9 h-9 rounded-xl bg-emerald-500/20 border border-emerald-500/40 flex items-center justify-center text-emerald-400 shadow-inner">
+            <i class="fas fa-compass text-lg"></i>
+          </div>
+          <div>
+            <h2 class="text-base font-bold text-white">Sanctuary Menu</h2>
+            <p class="text-[11px] text-slate-400">Settings & Navigation</p>
+          </div>
+        </div>
+        <button onclick="toggleMenuDrawer()" class="text-slate-400 hover:text-white p-2 rounded-xl glass-button">
+          <i class="fas fa-times text-base"></i>
+        </button>
+      </div>
+
+      <!-- Quick Room Shortcuts -->
+      <div class="space-y-2">
+        <label class="text-[11px] font-semibold uppercase tracking-wider text-slate-400 flex items-center gap-1.5">
+          <i class="fas fa-map-marked-alt text-emerald-400"></i> Therapy Environments
+        </label>
+        <button onclick="joinRoom('Main Deck'); toggleMenuDrawer();" class="w-full glass-button p-3 rounded-xl text-xs flex items-center justify-between text-slate-200 hover:text-white group">
+          <div class="flex items-center gap-2.5">
+            <span class="text-base">🏝️</span>
+            <div class="text-left">
+              <div class="font-medium">Main Sanctuary Deck</div>
+              <div class="text-[10px] text-slate-400">Central relaxation circle</div>
+            </div>
+          </div>
+          <i class="fas fa-chevron-right text-[10px] text-slate-500 group-hover:text-emerald-400 transition-colors"></i>
+        </button>
+
+        <button onclick="joinRoom('Group Therapy A'); toggleMenuDrawer();" class="w-full glass-button p-3 rounded-xl text-xs flex items-center justify-between text-slate-200 hover:text-white group">
+          <div class="flex items-center gap-2.5">
+            <span class="text-base">🛋️</span>
+            <div class="text-left">
+              <div class="font-medium">Group Therapy Circle</div>
+              <div class="text-[10px] text-slate-400">Private sharing room</div>
+            </div>
+          </div>
+          <i class="fas fa-chevron-right text-[10px] text-slate-500 group-hover:text-emerald-400 transition-colors"></i>
+        </button>
+
+        <button onclick="joinRoom('Sunset Haven'); toggleMenuDrawer();" class="w-full glass-button p-3 rounded-xl text-xs flex items-center justify-between text-slate-200 hover:text-white group">
+          <div class="flex items-center gap-2.5">
+            <span class="text-base">🌅</span>
+            <div class="text-left">
+              <div class="font-medium">Sunset Haven</div>
+              <div class="text-[10px] text-slate-400">Calming evening atmosphere</div>
+            </div>
+          </div>
+          <i class="fas fa-chevron-right text-[10px] text-slate-500 group-hover:text-emerald-400 transition-colors"></i>
+        </button>
+      </div>
+
+      <!-- Atmosphere & Environment Controls -->
+      <div class="space-y-2 pt-3 border-t border-slate-700/60">
+        <label class="text-[11px] font-semibold uppercase tracking-wider text-slate-400 flex items-center gap-1.5">
+          <i class="fas fa-cloud-sun text-amber-400"></i> Atmosphere Settings
+        </label>
+        <div class="grid grid-cols-3 gap-2">
+          <button onclick="setTimeOfDay('day')" class="glass-button p-2.5 rounded-xl text-xs flex flex-col items-center gap-1 text-amber-300 hover:bg-amber-500/20">
+            <i class="fas fa-sun text-lg text-amber-400"></i>
+            <span class="font-medium text-[11px]">Daylight</span>
+          </button>
+          <button onclick="setTimeOfDay('sunset')" class="glass-button p-2.5 rounded-xl text-xs flex flex-col items-center gap-1 text-orange-300 hover:bg-orange-500/20">
+            <i class="fas fa-sun-cloud text-lg text-orange-400"></i>
+            <span class="font-medium text-[11px]">Sunset</span>
+          </button>
+          <button onclick="setTimeOfDay('night')" class="glass-button p-2.5 rounded-xl text-xs flex flex-col items-center gap-1 text-indigo-300 hover:bg-indigo-500/20">
+            <i class="fas fa-moon text-lg text-indigo-300"></i>
+            <span class="font-medium text-[11px]">Night</span>
+          </button>
+        </div>
+      </div>
+
+      <!-- Controls Guidance -->
+      <div class="space-y-2 pt-3 border-t border-slate-700/60">
+        <label class="text-[11px] font-semibold uppercase tracking-wider text-slate-400 flex items-center gap-1.5">
+          <i class="fas fa-gamepad text-emerald-400"></i> Navigation & Controls
+        </label>
+        <div class="space-y-1.5 text-xs text-slate-300">
+          <div class="flex justify-between items-center">
+            <span class="text-slate-400">Movement</span>
+            <span class="font-mono text-[11px] bg-slate-800 px-2 py-0.5 rounded text-emerald-400 border border-slate-700">W, A, S, D / On-Screen D-Pad</span>
+          </div>
+          <div class="flex justify-between items-center">
+            <span class="text-slate-400">Camera Rotation</span>
+            <span class="font-mono text-[11px] bg-slate-800 px-2 py-0.5 rounded text-emerald-400 border border-slate-700">Right Click Drag / Touch Drag</span>
+          </div>
+          <div class="flex justify-between items-center">
+            <span class="text-slate-400">Jump Action</span>
+            <span class="font-mono text-[11px] bg-slate-800 px-2 py-0.5 rounded text-emerald-400 border border-slate-700">Spacebar / Jump Button</span>
+          </div>
+          <div class="flex justify-between items-center">
+            <span class="text-slate-400">Interact Objects</span>
+            <span class="font-mono text-[11px] bg-slate-800 px-2 py-0.5 rounded text-emerald-400 border border-slate-700">Click / Tap Object</span>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Menu Footer -->
+    <div class="border-t border-slate-700/60 pt-4 text-center mt-6">
+      <p class="text-[11px] text-slate-400 font-mono">Therapy Sanctuary Prototype v1.6</p>
+    </div>
+  </div>
+
+  <!-- Bottom Interactive Toolbar: Emotes & Action Toggles -->
+  <div class="fixed bottom-4 sm:bottom-6 left-1/2 -translate-x-1/2 z-30 flex items-center space-x-1.5 sm:space-x-2 p-1.5 sm:p-2 glass-panel max-w-[95vw] overflow-x-auto pointer-events-auto">
+    <button onclick="triggerEmote('wave')" class="glass-button px-2.5 py-1.5 sm:px-3 sm:py-2 rounded-xl text-xs font-medium flex items-center gap-1 whitespace-nowrap">
+      <span>👋</span> <span class="hidden sm:inline">Wave</span>
+    </button>
+    <button onclick="triggerEmote('clap')" class="glass-button px-2.5 py-1.5 sm:px-3 sm:py-2 rounded-xl text-xs font-medium flex items-center gap-1 whitespace-nowrap">
+      <span>👏</span> <span class="hidden sm:inline">Clap</span>
+    </button>
+    <button onclick="triggerEmote('dance')" class="glass-button px-2.5 py-1.5 sm:px-3 sm:py-2 rounded-xl text-xs font-medium flex items-center gap-1 whitespace-nowrap">
+      <span>💃</span> <span class="hidden sm:inline">Dance</span>
+    </button>
+    <button onclick="triggerEmote('meditate')" class="glass-button px-2.5 py-1.5 sm:px-3 sm:py-2 rounded-xl text-xs font-medium flex items-center gap-1 whitespace-nowrap">
+      <span>🧘</span> <span class="hidden sm:inline">Meditate</span>
+    </button>
+
+    <div class="h-5 sm:h-6 w-px bg-slate-700/80 mx-0.5 sm:mx-1"></div>
+
+    <button id="btn-run-toggle" onclick="toggleRunMode()" class="glass-button px-2.5 py-1.5 sm:px-3 sm:py-2 rounded-xl text-xs font-medium flex items-center gap-1 text-slate-200 whitespace-nowrap">
+      <i class="fas fa-running text-amber-400"></i>
+      <span id="run-text">Run Off</span>
+    </button>
+
+    <button id="btn-fly-toggle" onclick="toggleFlyMode()" class="glass-button px-2.5 py-1.5 sm:px-3 sm:py-2 rounded-xl text-xs font-medium flex items-center gap-1 text-slate-200 whitespace-nowrap">
+      <i class="fas fa-dove text-sky-400"></i>
+      <span id="fly-text">Fly Off</span>
+    </button>
+  </div>
+
+  <!-- Floating Raycast Tooltip Interaction Prompt -->
+  <div id="interaction-prompt" class="fixed top-16 sm:top-20 left-1/2 -translate-x-1/2 z-30 pointer-events-none hidden transition-all duration-200">
+    <div class="glass-panel px-3 py-1.5 sm:px-4 sm:py-2 text-xs font-semibold text-emerald-300 border border-emerald-500/40 shadow-xl flex items-center gap-2">
+      <i class="fas fa-hand-pointer animate-bounce"></i>
+      <span id="prompt-text">Interactable Object</span>
+    </div>
+  </div>
+
+  <!-- Toast Notification Popups -->
+  <div id="toast-container" class="fixed bottom-20 left-1/2 -translate-x-1/2 z-40 pointer-events-none flex flex-col items-center gap-2"></div>
+
+  <!-- Mobile On-Screen Controls Overlay -->
+  <div id="mobileControlsContainer" class="fixed inset-0 z-10 pointer-events-none flex flex-col justify-between p-4 sm:p-6 select-none">
+    <div class="w-full flex justify-between pointer-events-none"></div>
+    
+    <div class="w-full flex justify-between items-end pb-16 sm:pb-20 pointer-events-none">
+      <!-- D-Pad Directional Controls -->
+      <div class="flex flex-col items-center gap-1 touch-none pointer-events-auto">
+        <button id="btn-touch-up" class="touch-btn glass-button text-emerald-300 text-lg shadow-lg">▲</button>
+        <div class="flex gap-2">
+          <button id="btn-touch-left" class="touch-btn glass-button text-emerald-300 text-lg shadow-lg">◄</button>
+          <button id="btn-touch-down" class="touch-btn glass-button text-emerald-300 text-lg shadow-lg">▼</button>
+          <button id="btn-touch-right" class="touch-btn glass-button text-emerald-300 text-lg shadow-lg">►</button>
+        </div>
+      </div>
+
+      <!-- Action Jump Button -->
+      <div class="touch-none flex flex-col items-center gap-2 pointer-events-auto">
+        <button id="btn-touch-jump" class="touch-btn glass-button bg-emerald-500/30 border-emerald-400/60 text-emerald-200 text-sm font-bold shadow-xl w-16 h-16 rounded-2xl flex items-center justify-center">
+          JUMP
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Room Switcher Modal -->
+  <div id="room-modal" class="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/80 backdrop-blur-md hidden">
+    <div class="glass-panel p-6 max-w-md w-full mx-4 space-y-4 border border-slate-700">
+      <h2 class="text-lg font-bold text-white flex items-center gap-2">
+        <i class="fas fa-network-wired text-emerald-400"></i> Select Therapy Room
+      </h2>
+      <p class="text-xs text-slate-300">Choose a room instance to connect and interact with other active users in real-time.</p>
+      
+      <div class="space-y-2 pt-2">
+        <button onclick="joinRoom('Main Deck')" class="w-full text-left p-3 rounded-xl glass-button text-xs font-semibold flex justify-between items-center">
+          <span>🏝️ Main Deck (Default)</span>
+          <span class="text-emerald-400 text-[10px] bg-emerald-500/20 px-2 py-0.5 rounded-full">Public</span>
+        </button>
+        <button onclick="joinRoom('Group Therapy A')" class="w-full text-left p-3 rounded-xl glass-button text-xs font-semibold flex justify-between items-center">
+          <span>🛋️ Group Therapy Circle A</span>
+          <span class="text-indigo-400 text-[10px] bg-indigo-500/20 px-2 py-0.5 rounded-full">Session</span>
+        </button>
+        <button onclick="joinRoom('Sunset Haven')" class="w-full text-left p-3 rounded-xl glass-button text-xs font-semibold flex justify-between items-center">
+          <span>🌅 Sunset Haven</span>
+          <span class="text-amber-400 text-[10px] bg-amber-500/20 px-2 py-0.5 rounded-full">Relax</span>
+        </button>
+      </div>
+
+      <div class="pt-2 flex gap-2">
+        <input type="text" id="customRoomInput" placeholder="Or enter Custom Room ID..." class="flex-1 bg-slate-900/80 border border-slate-700 rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-emerald-400">
+        <button onclick="joinCustomRoom()" class="glass-button px-4 py-2 rounded-xl text-xs font-semibold text-emerald-300">Join</button>
+      </div>
+      <button onclick="closeRoomModal()" class="w-full text-center text-xs text-slate-400 hover:text-white pt-2">Close Modal</button>
+    </div>
+  </div>
+
+  <script>
+    // ==========================================
+    // 1. GLOBAL STATE & SYSTEM DECLARATIONS
+    // ==========================================
+    let scene, camera, renderer, clock;
+    let localPlayerGroup, localMesh;
+    let skyMesh, oceanMesh, sunLight, ambientLight, campfireLight;
+    let audioListener; // Three.js Audio Listener for 3D Positional Spatial Audio
+    
+    // Movement Controls State
+    const keys = { w: false, a: false, s: false, d: false, space: false, shift: false };
+    const mobileKeys = { up: false, down: false, left: false, right: false };
+    let playerVelocity = new THREE.Vector3();
+    let isGrounded = true;
+    let isRunning = false;
+    let isFlying = false;
+    let currentEmote = null;
+    let emoteTimer = null;
+    let isTouchDevice = false;
+    let forceShowTouchControls = false;
+
+    // Mobile Orbit Touch State
+    let touchStartPos = { x: 0, y: 0 };
+    let isTouchingCanvas = false;
+
+    // Unique Avatar Color Allocation
+    const playerColors = [0x2563eb, 0x10b981, 0xef4444, 0x8b5cf6, 0xf59e0b, 0xec4899, 0x06b6d4];
+    const myPlayerColor = playerColors[Math.floor(Math.random() * playerColors.length)];
+
+    // Camera Orbit Options
+    let cameraAngle = 0;
+    let cameraPitch = 0.3;
+    let cameraDistance = 10;
+    const minDistance = 3;
+    const maxDistance = 22;
+    let isRightMouseDown = false;
+    let previousMousePosition = { x: 0, y: 0 };
+
+    // Interactive Physics & Raycasting
+    const raycaster = new THREE.Raycaster();
+    const mouse = new THREE.Vector2();
+    const interactiveObjects = [];
+    const floatingIndicators = [];
+    const colliderObstacles = [];
+    let hoveredObject = null;
+
+    // Networking Channel & WebRTC Peer Connections
+    let networkChannel = null;
+    let peerInstance = null;
+    const clientId = 'User_' + Math.floor(Math.random() * 89999 + 10000);
+    let roomName = 'Main Deck';
+    const remotePlayers = {};
+    const peerConnections = {}; // WebRTC Data & Media Connections
+
+    // Synchronized World State
+    let worldState = {
+      radioPlaying: false,
+      sandcastleBuilt: false,
+      campfireLit: true,
+      timeOfDay: 'day'
+    };
+
+    let audioCtx = null;
+
+    // ==========================================
+    // 2. NETWORK & WEBRTC VOICE SYNCHRONIZATION
+    // ==========================================
+    function initNetwork() {
+      // Clean up previous peer network connections if switching rooms
+      if (peerInstance) {
+        try { peerInstance.destroy(); } catch(e){}
+      }
+      if (networkChannel) {
+        try { networkChannel.close(); } catch(e){}
+      }
+
+      // 1. Initialize BroadcastChannel for local multi-tab testing
+      try {
+        networkChannel = new BroadcastChannel(`sanctuary_room_${roomName.replace(/\s+/g, '_')}`);
+        networkChannel.onmessage = (event) => handleIncomingNetworkMessage(event.data);
+      } catch (e) {
+        console.warn("BroadcastChannel not available:", e);
+      }
+
+      // 2. Initialize PeerJS for true cross-device (Mobile <-> Desktop) peer networking
+      const roomSanitized = roomName.toLowerCase().replace(/[^a-z0-9]/g, '');
+      const peerId = `${roomSanitized}_${clientId}`;
+
+      try {
+        peerInstance = new Peer(peerId, {
+          debug: 1,
+          config: {
+            iceServers: [
+              { urls: 'stun:stun.l.google.com:19302' },
+              { urls: 'stun:stun1.l.google.com:19302' }
+            ]
+          }
+        });
+
+        peerInstance.on('open', (id) => {
+          showNotification(`Online as ${clientId}`);
+          broadcastPlayerState();
+          broadcastWorldState();
+          announceToRoomPeers();
+        });
+
+        // Handle incoming data connections from remote devices (Mobile/Desktop)
+        peerInstance.on('connection', (conn) => {
+          setupPeerDataConnection(conn);
+        });
+
+        // Handle incoming voice media calls from remote peers
+        peerInstance.on('call', (call) => {
+          call.answer(voiceChat.localStream || null);
+          call.on('stream', (remoteStream) => {
+            const peerClientId = call.peer.split('_').slice(1).join('_');
+            attachSpatialAudioToPeer(peerClientId, remoteStream);
+          });
+        });
+
+        peerInstance.on('error', (err) => {
+          console.warn("PeerJS connection warning:", err.type);
+        });
+
+      } catch (e) {
+        console.warn("PeerJS fallback activated.", e);
+      }
+
+      const displayElem = document.getElementById('roomNameDisplay');
+      if (displayElem) displayElem.innerText = roomName;
+    }
+
+    function announceToRoomPeers() {
+      // Broadcast state via Local BroadcastChannel
+      broadcastPlayerState();
+
+      // Scan/Connect to potential remote peers on other devices
+      if (!peerInstance) return;
+      
+      // Send message across all existing active PeerJS connections
+      Object.keys(peerConnections).forEach(pId => {
+        const conn = peerConnections[pId].dataConn;
+        if (conn && conn.open) {
+          sendStateToConn(conn);
+        }
+      });
+    }
+
+    function setupPeerDataConnection(conn) {
+      const remotePeerId = conn.peer;
+      const remoteClientId = remotePeerId.split('_').slice(1).join('_');
+
+      peerConnections[remoteClientId] = peerConnections[remoteClientId] || {};
+      peerConnections[remoteClientId].dataConn = conn;
+
+      conn.on('open', () => {
+        sendStateToConn(conn);
+      });
+
+      conn.on('data', (data) => {
+        handleIncomingNetworkMessage(data);
+      });
+
+      conn.on('close', () => {
+        removeRemotePlayer(remoteClientId);
+      });
+    }
+
+    function sendStateToConn(conn) {
+      if (!localPlayerGroup || !conn || !conn.open) return;
+      const isMoving = keys.w || keys.s || mobileKeys.up || mobileKeys.down;
+      conn.send({
+        type: 'PLAYER_SYNC',
+        senderId: clientId,
+        payload: {
+          position: { x: localPlayerGroup.position.x, y: localPlayerGroup.position.y, z: localPlayerGroup.position.z },
+          rotation: { y: localPlayerGroup.rotation.y },
+          emote: currentEmote,
+          isRunning,
+          isFlying,
+          isMoving,
+          color: myPlayerColor
+        }
+      });
+      conn.send({
+        type: 'WORLD_STATE_SYNC',
+        senderId: clientId,
+        payload: worldState
+      });
+    }
+
+    function handleIncomingNetworkMessage(data) {
+      if (!data || data.senderId === clientId) return;
+
+      if (data.type === 'PLAYER_SYNC') {
+        updateRemotePlayer(data.senderId, data.payload);
+        
+        // Auto-establish peer connection if discovered via BroadcastChannel or state sync
+        const roomSanitized = roomName.toLowerCase().replace(/[^a-z0-9]/g, '');
+        const targetPeerId = `${roomSanitized}_${data.senderId}`;
+        
+        if (peerInstance && !peerConnections[data.senderId]?.dataConn && peerInstance.id !== targetPeerId) {
+          try {
+            const conn = peerInstance.connect(targetPeerId);
+            setupPeerDataConnection(conn);
+          } catch(e){}
+        }
+      } else if (data.type === 'WORLD_STATE_SYNC') {
+        applyWorldState(data.payload);
+      } else if (data.type === 'PLAYER_DISCONNECT') {
+        removeRemotePlayer(data.senderId);
+      }
+    }
+
+    function broadcastPlayerState() {
+      if (!localPlayerGroup) return;
+      const isMoving = keys.w || keys.s || mobileKeys.up || mobileKeys.down;
+      const message = {
+        type: 'PLAYER_SYNC',
+        senderId: clientId,
+        payload: {
+          position: { x: localPlayerGroup.position.x, y: localPlayerGroup.position.y, z: localPlayerGroup.position.z },
+          rotation: { y: localPlayerGroup.rotation.y },
+          emote: currentEmote,
+          isRunning,
+          isFlying,
+          isMoving,
+          color: myPlayerColor
+        }
+      };
+
+      // Broadcast to local tab BroadcastChannel
+      if (networkChannel) {
+        try { networkChannel.postMessage(message); } catch (e) {}
+      }
+
+      // Broadcast across all connected cross-device peers
+      Object.keys(peerConnections).forEach(pId => {
+        const conn = peerConnections[pId].dataConn;
+        if (conn && conn.open) {
+          try { conn.send(message); } catch (e) {}
+        }
+      });
+    }
+
+    function attachSpatialAudioToPeer(peerId, stream) {
+      const peerMesh = remotePlayers[peerId];
+      if (!peerMesh || !audioListener) return;
+
+      if (peerMesh.userData.spatialAudio) {
+        peerMesh.remove(peerMesh.userData.spatialAudio);
+      }
+
+      try {
+        const positionalAudio = new THREE.PositionalAudio(audioListener);
+        positionalAudio.setMediaStreamSource(stream);
+        positionalAudio.setRefDistance(3);
+        positionalAudio.setMaxDistance(25);
+        positionalAudio.setRolloffFactor(1.5);
+        positionalAudio.setDistanceModel('linear');
+
+        peerMesh.add(positionalAudio);
+        peerMesh.userData.spatialAudio = positionalAudio;
+        showNotification(`Connected voice stream: ${peerId}`);
+      } catch (err) {
+        console.warn("Could not bind spatial audio node:", err);
+      }
+    }
+
+    function broadcastWorldState() {
+      const message = {
+        type: 'WORLD_STATE_SYNC',
+        senderId: clientId,
+        payload: worldState
+      };
+
+      if (networkChannel) {
+        try { networkChannel.postMessage(message); } catch (e) {}
+      }
+
+      Object.keys(peerConnections).forEach(pId => {
+        const conn = peerConnections[pId].dataConn;
+        if (conn && conn.open) {
+          try { conn.send(message); } catch (e) {}
+        }
+      });
+    }
+
+    function updateRemotePlayer(id, payload) {
+      if (!remotePlayers[id]) {
+        const color = payload.color || 0x10b981;
+        const peerMesh = createCharacterMesh(color);
+        scene.add(peerMesh);
+        remotePlayers[id] = peerMesh;
+        
+        peerMesh.userData.targetPosition = new THREE.Vector3();
+        peerMesh.userData.targetRotation = 0;
+        showNotification(`Player joined: ${id}`);
+      }
+
+      const peer = remotePlayers[id];
+      if (peer && payload.position) {
+        peer.userData.targetPosition.set(payload.position.x, payload.position.y, payload.position.z);
+
+        if (payload.rotation !== undefined) {
+          peer.userData.targetRotation = payload.rotation.y;
+        }
+
+        peer.userData.currentEmote = payload.emote || null;
+        peer.userData.isRunning = payload.isRunning || false;
+        peer.userData.isFlying = payload.isFlying || false;
+        peer.userData.isMoving = payload.isMoving || false;
+      }
+    }
+
+    function removeRemotePlayer(id) {
+      if (remotePlayers[id]) {
+        scene.remove(remotePlayers[id]);
+        delete remotePlayers[id];
+      }
+      if (peerConnections[id]) {
+        if (peerConnections[id].dataConn) {
+          try { peerConnections[id].dataConn.close(); } catch(e){}
+        }
+        delete peerConnections[id];
+      }
+    }
+
+    function applyWorldState(state) {
+      if (!state) return;
+      worldState = { ...state };
+      
+      if (campfireLight) campfireLight.intensity = worldState.campfireLit ? 2.5 : 0;
+      const fireMesh = scene.getObjectByName('fireMesh');
+      if (fireMesh) fireMesh.visible = worldState.campfireLit;
+      
+      const sc = scene.getObjectByName('sandcastleMesh');
+      if (sc) sc.visible = worldState.sandcastleBuilt;
+
+      if (worldState.timeOfDay) {
+        setTimeOfDay(worldState.timeOfDay, false);
+      }
+
+      updateRadioAudioState();
+    }
+
+    function joinRoom(name) {
+      if (networkChannel) {
+        networkChannel.postMessage({ type: 'PLAYER_DISCONNECT', senderId: clientId });
+      }
+      roomName = name;
+      Object.keys(remotePlayers).forEach(id => removeRemotePlayer(id));
+      closeRoomModal();
+      initNetwork();
+      showNotification(`Connected to Room: ${roomName}`);
+    }
+
+    function joinCustomRoom() {
+      const input = document.getElementById('customRoomInput').value.trim();
+      if (input) joinRoom(input);
+    }
+
+    function closeRoomModal() {
+      document.getElementById('room-modal').classList.add('hidden');
+    }
+
+    function toggleMenuDrawer() {
+      const menu = document.getElementById('sideMenuDrawer');
+      const overlay = document.getElementById('menuOverlay');
+      if (menu && overlay) {
+        menu.classList.toggle('-translate-x-full');
+        overlay.classList.toggle('active');
+        playSoundFX('click');
+      }
+    }
+
+    // ==========================================
+    // 3. VOICE CHAT & AUDIO SYNTHESIZERS
+    // ==========================================
+    class VoiceChatSystem {
+      constructor() {
+        this.localStream = null;
+        this.isMuted = true;
+        this.audioContext = null;
+        this.analyser = null;
+        this.microphoneSource = null;
+        this.setupUI();
+      }
+
+      setupUI() {
+        const btn = document.getElementById('micToggleBtn');
+        const icon = document.getElementById('micIcon');
+        const label = document.getElementById('micLabel');
+        const meterContainer = document.getElementById('audioMeterContainer');
+        const meterBar = document.getElementById('audioMeterBar');
+
+        if (!btn) return;
+
+        btn.addEventListener('click', async () => {
+          initAudioContext();
+          if (this.isMuted) {
+            const success = await this.enableMic();
+            if (success) {
+              this.isMuted = false;
+              btn.classList.remove('mic-muted');
+              btn.classList.add('mic-active');
+              icon.className = 'fas fa-microphone text-sm';
+              label.textContent = 'Voice On';
+              meterContainer.classList.remove('hidden');
+              this.startAudioMeter();
+
+              Object.keys(remotePlayers).forEach(peerId => {
+                createPeerConnection(peerId, true);
+              });
+            }
+          } else {
+            this.disableMic();
+            this.isMuted = true;
+            btn.classList.remove('mic-active');
+            btn.classList.add('mic-muted');
+            icon.className = 'fas fa-microphone-slash text-sm';
+            label.textContent = 'Voice Off';
+            meterContainer.classList.add('hidden');
+            if (meterBar) meterBar.style.width = '0%';
+          }
+        });
+      }
+
+      async enableMic() {
+        try {
+          this.localStream = await navigator.mediaDevices.getUserMedia({ audio: true, video: false });
+          this.audioContext = new (window.AudioContext || window.webkitAudioContext)();
+          if (this.audioContext.state === 'suspended') {
+            await this.audioContext.resume();
+          }
+          this.analyser = this.audioContext.createAnalyser();
+          this.analyser.fftSize = 64;
+          this.microphoneSource = this.audioContext.createMediaStreamSource(this.localStream);
+          this.microphoneSource.connect(this.analyser);
+          return true;
+        } catch (err) {
+          console.warn('Microphone access denied:', err);
+          showNotification('Microphone access restricted');
+          return false;
+        }
+      }
+
+      disableMic() {
+        if (this.localStream) {
+          this.localStream.getTracks().forEach(track => track.stop());
+          this.localStream = null;
+        }
+        if (this.audioContext) {
+          this.audioContext.close();
+          this.audioContext = null;
+        }
+        Object.keys(peerConnections).forEach(peerId => {
+          if (peerConnections[peerId]) {
+            peerConnections[peerId].close();
+            delete peerConnections[peerId];
+          }
+        });
+      }
+
+      startAudioMeter() {
+        if (!this.analyser || this.isMuted) return;
+        const dataArray = new Uint8Array(this.analyser.frequencyBinCount);
+        const meterBar = document.getElementById('audioMeterBar');
+
+        const updateMeter = () => {
+          if (this.isMuted || !this.analyser) return;
+          this.analyser.getByteFrequencyData(dataArray);
+          let sum = 0;
+          for (let i = 0; i < dataArray.length; i++) sum += dataArray[i];
+          const average = sum / dataArray.length;
+          const percentage = Math.min(100, Math.max(0, (average / 128) * 100));
+          if (meterBar) meterBar.style.width = `${percentage}%`;
+          requestAnimationFrame(updateMeter);
+        };
+        updateMeter();
+      }
+    }
+
+    class UpbeatRadioSynthesizer {
+      constructor() {
+        this.isPlaying = false;
+        this.synthAudioCtx = null;
+        this.timer = null;
+        this.step = 0;
+        this.tempo = 124;
+        this.bassNotes = [130.81, 130.81, 164.81, 174.61, 196.00, 196.00, 220.00, 196.00];
+        this.leadMelody = [
+          523.25, 659.25, 783.99, 1046.50, 783.99, 659.25, 880.00, 1046.50,
+          587.33, 698.46, 880.00, 1174.66, 880.00, 698.46, 783.99, 987.77
+        ];
+      }
+
+      toggle() {
+        if (this.isPlaying) this.stop();
+        else this.start();
+        return this.isPlaying;
+      }
+
+      start() {
+        if (this.isPlaying) return;
+        this.synthAudioCtx = new (window.AudioContext || window.webkitAudioContext)();
+        this.isPlaying = true;
+        this.step = 0;
+        this.scheduleNextStep();
+      }
+
+      stop() {
+        this.isPlaying = false;
+        if (this.timer) clearTimeout(this.timer);
+        if (this.synthAudioCtx) {
+          this.synthAudioCtx.close();
+          this.synthAudioCtx = null;
+        }
+      }
+
+      scheduleNextStep() {
+        if (!this.isPlaying || !this.synthAudioCtx) return;
+        const now = this.synthAudioCtx.currentTime;
+
+        if (this.step % 2 === 0) {
+          const bassOsc = this.synthAudioCtx.createOscillator();
+          const bassGain = this.synthAudioCtx.createGain();
+          bassOsc.type = 'sawtooth';
+          bassOsc.frequency.setValueAtTime(this.bassNotes[(Math.floor(this.step / 4)) % this.bassNotes.length] / 2, now);
+          bassGain.gain.setValueAtTime(0.15, now);
+          bassGain.gain.exponentialRampToValueAtTime(0.001, now + 0.15);
+          bassOsc.connect(bassGain);
+          bassGain.connect(this.synthAudioCtx.destination);
+          bassOsc.start(now);
+          bassOsc.stop(now + 0.16);
+        }
+
+        const leadOsc = this.synthAudioCtx.createOscillator();
+        const leadGain = this.synthAudioCtx.createGain();
+        leadOsc.type = 'triangle';
+        leadOsc.frequency.setValueAtTime(this.leadMelody[this.step % this.leadMelody.length], now);
+        leadGain.gain.setValueAtTime(0.1, now);
+        leadGain.gain.exponentialRampToValueAtTime(0.001, now + 0.12);
+        leadOsc.connect(leadGain);
+        leadGain.connect(this.synthAudioCtx.destination);
+        leadOsc.start(now);
+        leadOsc.stop(now + 0.13);
+
+        if (this.step % 4 === 0) {
+          const kickOsc = this.synthAudioCtx.createOscillator();
+          const kickGain = this.synthAudioCtx.createGain();
+          kickOsc.frequency.setValueAtTime(130, now);
+          kickOsc.frequency.exponentialRampToValueAtTime(0.01, now + 0.12);
+          kickGain.gain.setValueAtTime(0.25, now);
+          kickGain.gain.exponentialRampToValueAtTime(0.001, now + 0.12);
+          kickOsc.connect(kickGain);
+          kickGain.connect(this.synthAudioCtx.destination);
+          kickOsc.start(now);
+          kickOsc.stop(now + 0.13);
+        }
+
+        this.step = (this.step + 1) % 64;
+        const interval = (60 / this.tempo / 4) * 1000;
+        this.timer = setTimeout(() => this.scheduleNextStep(), interval);
+      }
+    }
+
+    const voiceChat = new VoiceChatSystem();
+    const beachRadioMusic = new UpbeatRadioSynthesizer();
+
+    function updateRadioAudioState() {
+      if (worldState.radioPlaying) {
+        beachRadioMusic.start();
+      } else {
+        beachRadioMusic.stop();
+      }
+    }
+
+    function initAudioContext() {
+      if (!audioCtx) {
+        audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+      }
+      if (audioCtx.state === 'suspended') {
+        audioCtx.resume();
+      }
+    }
+
+    function playSoundFX(type) {
+      initAudioContext();
+      if (!audioCtx) return;
+      try {
+        const osc = audioCtx.createOscillator();
+        const gain = audioCtx.createGain();
+        osc.connect(gain);
+        gain.connect(audioCtx.destination);
+
+        if (type === 'jump') {
+          osc.frequency.setValueAtTime(150, audioCtx.currentTime);
+          osc.frequency.exponentialRampToValueAtTime(400, audioCtx.currentTime + 0.15);
+          gain.gain.setValueAtTime(0.2, audioCtx.currentTime);
+          gain.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + 0.15);
+          osc.start(); osc.stop(audioCtx.currentTime + 0.15);
+        } else if (type === 'pop') {
+          osc.frequency.setValueAtTime(300, audioCtx.currentTime);
+          osc.frequency.exponentialRampToValueAtTime(600, audioCtx.currentTime + 0.08);
+          gain.gain.setValueAtTime(0.15, audioCtx.currentTime);
+          gain.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + 0.08);
+          osc.start(); osc.stop(audioCtx.currentTime + 0.08);
+        } else if (type === 'click') {
+          osc.frequency.setValueAtTime(800, audioCtx.currentTime);
+          gain.gain.setValueAtTime(0.1, audioCtx.currentTime);
+          gain.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + 0.05);
+          osc.start(); osc.stop(audioCtx.currentTime + 0.05);
+        }
+      } catch (e) {}
+    }
+
+    // ==========================================
+    // 4. LOW-POLY 3D ENVIRONMENT CREATION
+    // ==========================================
+    function buildSanctuaryEnvironment() {
+      const skyGeo = new THREE.SphereGeometry(200, 32, 15);
+      const skyMat = new THREE.MeshBasicMaterial({ color: 0x7ec0ee, side: THREE.BackSide });
+      skyMesh = new THREE.Mesh(skyGeo, skyMat);
+      scene.add(skyMesh);
+
+      const islandGeo = new THREE.CylinderGeometry(45, 52, 6, 32, 8);
+      const pos = islandGeo.attributes.position;
+      for (let i = 0; i < pos.count; i++) {
+        let y = pos.getY(i);
+        if (y > 0) {
+          let x = pos.getX(i);
+          let z = pos.getZ(i);
+          let dist = Math.sqrt(x * x + z * z);
+          pos.setY(i, y + Math.sin(x * 0.1) * 0.8 + Math.cos(z * 0.1) * 0.8 - (dist * 0.05));
+        }
+      }
+      islandGeo.computeVertexNormals();
+      const islandMat = new THREE.MeshStandardMaterial({
+        color: 0xe6cb9c,
+        roughness: 0.9,
+        metalness: 0.1,
+        flatShading: true
+      });
+      const island = new THREE.Mesh(islandGeo, islandMat);
+      island.position.y = -3;
+      island.receiveShadow = true;
+      scene.add(island);
+
+      const oceanGeo = new THREE.PlaneGeometry(300, 300, 32, 32);
+      const oceanMat = new THREE.MeshStandardMaterial({
+        color: 0x1e88e5,
+        roughness: 0.1,
+        metalness: 0.8,
+        transparent: true,
+        opacity: 0.82
+      });
+      oceanMesh = new THREE.Mesh(oceanGeo, oceanMat);
+      oceanMesh.rotation.x = -Math.PI / 2;
+      oceanMesh.position.y = -1.8;
+      scene.add(oceanMesh);
+
+      createTherapyCircle();
+      createCampfireArea();
+      createRadioObject();
+      createSandcastleBucketArea();
+      createScatteredTreesAndRocks();
+    }
+
+    function createTherapyCircle() {
+      const deckGeo = new THREE.CylinderGeometry(8, 8, 0.3, 16);
+      const deckMat = new THREE.MeshStandardMaterial({ color: 0x8b5a2b, roughness: 0.8, flatShading: true });
+      const deck = new THREE.Mesh(deckGeo, deckMat);
+      deck.position.set(0, 0.15, 0);
+      deck.receiveShadow = true;
+      scene.add(deck);
+
+      const chairCount = 8;
+      const radius = 5.5;
+      for (let i = 0; i < chairCount; i++) {
+        const angle = (i / chairCount) * Math.PI * 2;
+        const x = Math.cos(angle) * radius;
+        const z = Math.sin(angle) * radius;
+
+        const chairGroup = new THREE.Group();
+        const seatGeo = new THREE.BoxGeometry(1.2, 0.3, 1.2);
+        const seatMat = new THREE.MeshStandardMaterial({ color: i % 2 === 0 ? 0x3b82f6 : 0x10b981, roughness: 0.6 });
+        const seat = new THREE.Mesh(seatGeo, seatMat);
+        seat.position.y = 0.5;
+        seat.castShadow = true;
+        chairGroup.add(seat);
+
+        const legGeo = new THREE.CylinderGeometry(0.08, 0.08, 0.5);
+        const legMat = new THREE.MeshStandardMaterial({ color: 0x334155 });
+        [[-0.4, -0.4], [0.4, -0.4], [-0.4, 0.4], [0.4, 0.4]].forEach(offset => {
+          const leg = new THREE.Mesh(legGeo, legMat);
+          leg.position.set(offset[0], 0.25, offset[1]);
+          chairGroup.add(leg);
+        });
+
+        const backGeo = new THREE.BoxGeometry(1.2, 0.8, 0.2);
+        const back = new THREE.Mesh(backGeo, seatMat);
+        back.position.set(0, 0.9, -0.5);
+        back.castShadow = true;
+        chairGroup.add(back);
+
+        chairGroup.position.set(x, 0.15, z);
+        chairGroup.lookAt(0, 0.15, 0);
+        scene.add(chairGroup);
+      }
+    }
+
+    function createCampfireArea() {
+      const campfireGroup = new THREE.Group();
+      campfireGroup.position.set(12, 0.3, -8);
+
+      const rockGeo = new THREE.DodecahedronGeometry(0.3, 0);
+      const rockMat = new THREE.MeshStandardMaterial({ color: 0x64748b, roughness: 0.9, flatShading: true });
+      for (let i = 0; i < 8; i++) {
+        const a = (i / 8) * Math.PI * 2;
+        const r = new THREE.Mesh(rockGeo, rockMat);
+        r.position.set(Math.cos(a) * 1.2, 0.15, Math.sin(a) * 1.2);
+        campfireGroup.add(r);
+      }
+
+      const logGeo = new THREE.CylinderGeometry(0.12, 0.12, 1.6);
+      const logMat = new THREE.MeshStandardMaterial({ color: 0x543d2b, roughness: 0.9 });
+      for (let i = 0; i < 3; i++) {
+        const log = new THREE.Mesh(logGeo, logMat);
+        log.rotation.z = Math.PI / 3;
+        log.rotation.y = (i * Math.PI) / 3;
+        log.position.y = 0.2;
+        campfireGroup.add(log);
+      }
+
+      campfireLight = new THREE.PointLight(0xff7700, 2.5, 15);
+      campfireLight.position.set(0, 0.8, 0);
+      campfireGroup.add(campfireLight);
+
+      const fireGeo = new THREE.ConeGeometry(0.6, 1.2, 6);
+      const fireMat = new THREE.MeshBasicMaterial({ color: 0xff4500, wireframe: true });
+      const fireMesh = new THREE.Mesh(fireGeo, fireMat);
+      fireMesh.position.y = 0.7;
+      fireMesh.name = "fireMesh";
+      campfireGroup.add(fireMesh);
+
+      scene.add(campfireGroup);
+      colliderObstacles.push({ pos: campfireGroup.position, radius: 1.5 });
+
+      registerInteractiveObject(campfireGroup, "Campfire", "Toggle Fire Flame & Warmth", () => {
+        worldState.campfireLit = !worldState.campfireLit;
+        campfireLight.intensity = worldState.campfireLit ? 2.5 : 0;
+        fireMesh.visible = worldState.campfireLit;
+        broadcastWorldState();
+        showNotification(worldState.campfireLit ? "Campfire Lit 🔥" : "Campfire Extinguished 💨");
+      });
+    }
+
+    function createRadioObject() {
+      const radioGroup = new THREE.Group();
+      radioGroup.position.set(-10, 0.8, 10);
+
+      const tableTop = new THREE.Mesh(
+        new THREE.BoxGeometry(2, 0.2, 1.5),
+        new THREE.MeshStandardMaterial({ color: 0xa16207, roughness: 0.8 })
+      );
+      tableTop.position.y = 0;
+      tableTop.castShadow = true;
+      radioGroup.add(tableTop);
+
+      const tableLeg = new THREE.Mesh(
+        new THREE.CylinderGeometry(0.1, 0.1, 1.2),
+        new THREE.MeshStandardMaterial({ color: 0x451a03 })
+      );
+      tableLeg.position.y = -0.6;
+      radioGroup.add(tableLeg);
+
+      const radioBody = new THREE.Mesh(
+        new THREE.BoxGeometry(0.8, 0.5, 0.3),
+        new THREE.MeshStandardMaterial({ color: 0xef4444, roughness: 0.4 })
+      );
+      radioBody.position.set(0, 0.35, 0);
+      radioBody.castShadow = true;
+      radioGroup.add(radioBody);
+
+      const speakerGeo = new THREE.CylinderGeometry(0.12, 0.12, 0.05);
+      const speakerMat = new THREE.MeshStandardMaterial({ color: 0x1e293b });
+      const s1 = new THREE.Mesh(speakerGeo, speakerMat);
+      s1.rotation.x = Math.PI / 2;
+      s1.position.set(-0.2, 0.35, 0.15);
+      radioGroup.add(s1);
+
+      const s2 = s1.clone();
+      s2.position.set(0.2, 0.35, 0.15);
+      radioGroup.add(s2);
+
+      scene.add(radioGroup);
+      colliderObstacles.push({ pos: radioGroup.position, radius: 1.2 });
+
+      registerInteractiveObject(radioGroup, "Beach Radio", "Toggle Upbeat Beats", () => {
+        worldState.radioPlaying = !worldState.radioPlaying;
+        updateRadioAudioState();
+        broadcastWorldState();
+        showNotification(worldState.radioPlaying ? "Upbeat Music ON 🎵" : "Radio Turned OFF 🔇");
+      });
+    }
+
+    function createSandcastleBucketArea() {
+      const bucketGroup = new THREE.Group();
+      bucketGroup.position.set(-14, 0.3, -12);
+
+      const bucketMesh = new THREE.Mesh(
+        new THREE.CylinderGeometry(0.4, 0.3, 0.6, 12),
+        new THREE.MeshStandardMaterial({ color: 0xeab308, roughness: 0.3 })
+      );
+      bucketMesh.position.y = 0.3;
+      bucketMesh.castShadow = true;
+      bucketGroup.add(bucketMesh);
+
+      const sandcastleGroup = new THREE.Group();
+      sandcastleGroup.name = "sandcastleMesh";
+      
+      const tower = new THREE.Mesh(
+        new THREE.CylinderGeometry(0.8, 1.2, 1.2, 8),
+        new THREE.MeshStandardMaterial({ color: 0xd97706, roughness: 0.9 })
+      );
+      tower.position.set(1.2, 0.6, 0);
+      tower.castShadow = true;
+      sandcastleGroup.add(tower);
+
+      const spire = new THREE.Mesh(
+        new THREE.ConeGeometry(0.5, 0.8, 8),
+        new THREE.MeshStandardMaterial({ color: 0xd97706, roughness: 0.9 })
+      );
+      spire.position.set(1.2, 1.6, 0);
+      sandcastleGroup.add(spire);
+
+      sandcastleGroup.visible = false;
+      bucketGroup.add(sandcastleGroup);
+
+      scene.add(bucketGroup);
+      colliderObstacles.push({ pos: bucketGroup.position, radius: 1.5 });
+
+      registerInteractiveObject(bucketGroup, "Sand Bucket", "Build / Clear Sandcastle", () => {
+        worldState.sandcastleBuilt = !worldState.sandcastleBuilt;
+        sandcastleGroup.visible = worldState.sandcastleBuilt;
+        broadcastWorldState();
+        showNotification(worldState.sandcastleBuilt ? "Built Sandcastle! 🏰" : "Cleared Sandcastle ⏳");
+      });
+    }
+
+    function createScatteredTreesAndRocks() {
+      function createPalmTree(x, z) {
+        const tree = new THREE.Group();
+        tree.position.set(x, 0, z);
+
+        const trunkGeo = new THREE.CylinderGeometry(0.3, 0.5, 6, 7);
+        const trunkMat = new THREE.MeshStandardMaterial({ color: 0x78350f, roughness: 0.9, flatShading: true });
+        const trunk = new THREE.Mesh(trunkGeo, trunkMat);
+        trunk.position.y = 3;
+        trunk.castShadow = true;
+        tree.add(trunk);
+
+        const leafMat = new THREE.MeshStandardMaterial({ color: 0x15803d, roughness: 0.6, flatShading: true, side: THREE.DoubleSide });
+        for (let i = 0; i < 6; i++) {
+          const leaf = new THREE.Mesh(new THREE.ConeGeometry(1.2, 4, 4), leafMat);
+          leaf.position.set(0, 5.8, 0);
+          leaf.rotation.x = Math.PI / 3;
+          leaf.rotation.y = (i * Math.PI) / 3;
+          leaf.scale.set(1, 1, 0.2);
+          tree.add(leaf);
+        }
+        scene.add(tree);
+        colliderObstacles.push({ pos: tree.position, radius: 0.9 });
+      }
+
+      [[-18, 15], [18, 18], [-22, -18], [22, -10], [-10, -25], [15, -22]].forEach(coord => createPalmTree(coord[0], coord[1]));
+
+      const rockGeo = new THREE.DodecahedronGeometry(1.2, 1);
+      const rockMat = new THREE.MeshStandardMaterial({ color: 0x64748b, roughness: 0.8, flatShading: true });
+      for (let i = 0; i < 12; i++) {
+        const rock = new THREE.Mesh(rockGeo, rockMat);
+        const rx = (Math.random() - 0.5) * 60;
+        const rz = (Math.random() - 0.5) * 60;
+        if (Math.sqrt(rx * rx + rz * rz) > 10) {
+          rock.position.set(rx, 0.5, rz);
+          const scaleRadius = 0.8 + Math.random() * 0.8;
+          rock.scale.set(scaleRadius, 0.5 + Math.random() * 0.8, scaleRadius);
+          rock.castShadow = true;
+          scene.add(rock);
+          colliderObstacles.push({ pos: rock.position, radius: scaleRadius * 1.1 });
+        }
+      }
+    }
+
+    // ==========================================
+    // 5. CHARACTER CREATION & RIGGED ANIMATIONS
+    // ==========================================
+    function createCharacterMesh(colorHex = 0x2563eb) {
+      const group = new THREE.Group();
+
+      const bodyMat = new THREE.MeshStandardMaterial({ color: colorHex, roughness: 0.5, flatShading: true });
+      const skinMat = new THREE.MeshStandardMaterial({ color: 0xfed7aa, roughness: 0.6 });
+      const eyeMat = new THREE.MeshBasicMaterial({ color: 0x0f172a });
+
+      const torso = new THREE.Mesh(new THREE.BoxGeometry(0.8, 1.1, 0.5), bodyMat);
+      torso.position.y = 1.35;
+      torso.name = "torso";
+      torso.castShadow = true;
+      group.add(torso);
+
+      const head = new THREE.Mesh(new THREE.BoxGeometry(0.65, 0.65, 0.65), skinMat);
+      head.position.y = 2.25;
+      head.name = "head";
+      head.castShadow = true;
+      group.add(head);
+
+      const eyeL = new THREE.Mesh(new THREE.BoxGeometry(0.1, 0.1, 0.05), eyeMat);
+      eyeL.position.set(-0.15, 2.3, 0.33);
+      const eyeR = eyeL.clone();
+      eyeR.position.x = 0.15;
+      group.add(eyeL);
+      group.add(eyeR);
+
+      const armGeo = new THREE.BoxGeometry(0.28, 0.9, 0.28);
+      
+      const armLGroup = new THREE.Group();
+      armLGroup.position.set(-0.55, 1.8, 0);
+      const armL = new THREE.Mesh(armGeo, bodyMat);
+      armL.position.y = -0.35;
+      armLGroup.add(armL);
+      armLGroup.name = "armL";
+      group.add(armLGroup);
+
+      const armRGroup = new THREE.Group();
+      armRGroup.position.set(0.55, 1.8, 0);
+      const armR = new THREE.Mesh(armGeo, bodyMat);
+      armR.position.y = -0.35;
+      armRGroup.add(armR);
+      armRGroup.name = "armR";
+      group.add(armRGroup);
+
+      const legGeo = new THREE.BoxGeometry(0.32, 0.9, 0.32);
+      
+      const legLGroup = new THREE.Group();
+      legLGroup.position.set(-0.22, 0.8, 0);
+      const legL = new THREE.Mesh(legGeo, bodyMat);
+      legL.position.y = -0.4;
+      legLGroup.add(legL);
+      legLGroup.name = "legL";
+      group.add(legLGroup);
+
+      const legRGroup = new THREE.Group();
+      legRGroup.position.set(0.22, 0.8, 0);
+      const legR = new THREE.Mesh(legGeo, bodyMat);
+      legR.position.y = -0.4;
+      legRGroup.add(legR);
+      legRGroup.name = "legR";
+      group.add(legRGroup);
+
+      return group;
+    }
+
+    function createLocalPlayer() {
+      localPlayerGroup = new THREE.Group();
+      localMesh = createCharacterMesh(myPlayerColor);
+      localPlayerGroup.add(localMesh);
+      localPlayerGroup.position.set(0, 0.2, 4);
+      scene.add(localPlayerGroup);
+    }
+
+    function updateCharacterAnimations(characterGroup, time, isMoving, isRunningState, isFlyingState, activeEmote) {
+      const characterMesh = characterGroup.children[0] || characterGroup;
+      const armL = characterMesh.getObjectByName("armL");
+      const armR = characterMesh.getObjectByName("armR");
+      const legL = characterMesh.getObjectByName("legL");
+      const legR = characterMesh.getObjectByName("legR");
+      const head = characterMesh.getObjectByName("head");
+      const torso = characterMesh.getObjectByName("torso");
+
+      if (!armL || !armR || !legL || !legR) return;
+
+      armL.rotation.set(0, 0, 0);
+      armR.rotation.set(0, 0, 0);
+      legL.rotation.set(0, 0, 0);
+      legR.rotation.set(0, 0, 0);
+      if (head) head.rotation.set(0, 0, 0);
+      if (torso) torso.rotation.set(0, 0, 0);
+      characterMesh.rotation.set(0, 0, 0);
+
+      if (activeEmote) {
+        const eTimer = time * 4;
+        if (activeEmote === 'wave') {
+          armR.rotation.z = Math.PI / 1.3;
+          armR.rotation.x = Math.sin(eTimer * 3) * 0.2;
+          armL.rotation.z = 0.1;
+        } else if (activeEmote === 'clap') {
+          armL.rotation.x = -Math.PI / 2.2;
+          armR.rotation.x = -Math.PI / 2.2;
+          armL.rotation.z = 0.2;
+          armR.rotation.z = -0.2;
+          const clapOffset = Math.sin(eTimer * 8) * 0.25;
+          armL.rotation.y = 0.5 + clapOffset;
+          armR.rotation.y = -0.5 - clapOffset;
+        } else if (activeEmote === 'dance') {
+          characterMesh.position.y = Math.abs(Math.sin(eTimer * 3)) * 0.25;
+          armL.rotation.z = Math.sin(eTimer * 2) * 0.6 + 0.6;
+          armR.rotation.z = -Math.cos(eTimer * 2) * 0.6 - 0.6;
+          legL.rotation.x = Math.sin(eTimer * 2) * 0.3;
+          legR.rotation.x = -Math.sin(eTimer * 2) * 0.3;
+          if (head) head.rotation.y = Math.sin(eTimer * 2) * 0.3;
+        } else if (activeEmote === 'meditate') {
+          characterMesh.position.y = 0.4 + Math.sin(time * 2) * 0.1;
+          legL.rotation.x = -Math.PI / 2.5;
+          legR.rotation.x = -Math.PI / 2.5;
+          legL.rotation.y = 0.3;
+          legR.rotation.y = -0.3;
+          armL.rotation.z = 0.6;
+          armR.rotation.z = -0.6;
+          armL.rotation.x = -0.2;
+          armR.rotation.x = -0.2;
+        }
+        return;
+      }
+
+      if (!isFlyingState) characterMesh.position.y = 0;
+
+      if (isFlyingState) {
+        characterMesh.rotation.x = Math.PI / 2.5;
+        armR.rotation.x = -Math.PI;
+        armL.rotation.x = -Math.PI / 4;
+        armR.rotation.z = -0.1;
+        armL.rotation.z = 0.1;
+        legL.rotation.x = 0.2;
+        legR.rotation.x = 0.2;
+        return;
+      }
+
+      if (isMoving) {
+        const speed = isRunningState ? 16 : 9;
+        const swing = isRunningState ? 0.8 : 0.45;
+
+        armL.rotation.x = Math.sin(time * speed) * swing;
+        armR.rotation.x = -Math.sin(time * speed) * swing;
+        legL.rotation.x = -Math.sin(time * speed) * swing;
+        legR.rotation.x = Math.sin(time * speed) * swing;
+
+        armL.rotation.z = 0.05;
+        armR.rotation.z = -0.05;
+      } else {
+        const idleSwing = Math.sin(time * 2) * 0.04;
+        armL.rotation.x = idleSwing;
+        armR.rotation.x = -idleSwing;
+        armL.rotation.z = 0.1;
+        armR.rotation.z = -0.1;
+      }
+    }
+
+    function triggerEmote(emoteName) {
+      currentEmote = emoteName;
+      playSoundFX('pop');
+      showNotification(`Emote: ${emoteName.toUpperCase()}`);
+      broadcastPlayerState();
+
+      if (emoteTimer) clearTimeout(emoteTimer);
+      emoteTimer = setTimeout(() => {
+        if (currentEmote === emoteName) {
+          currentEmote = null;
+          broadcastPlayerState();
+        }
+      }, 4500);
+    }
+
+    // ==========================================
+    // 6. INTERACTION & ENVIRONMENT CONTROLS
+    // ==========================================
+    function registerInteractiveObject(group, name, description, onClickCallback) {
+      group.userData = { name, description, onClickCallback };
+      interactiveObjects.push(group);
+
+      const indicatorGeo = new THREE.RingGeometry(0.3, 0.45, 16);
+      const indicatorMat = new THREE.MeshBasicMaterial({ color: 0xffffff, side: THREE.DoubleSide, transparent: true, opacity: 0.85 });
+      const indicator = new THREE.Mesh(indicatorGeo, indicatorMat);
+      indicator.position.set(0, 2.5, 0);
+      group.add(indicator);
+      floatingIndicators.push(indicator);
+    }
+
+    function checkRaycastInteractions() {
+      raycaster.setFromCamera(mouse, camera);
+      const intersects = raycaster.intersectObjects(interactiveObjects, true);
+
+      if (intersects.length > 0) {
+        let obj = intersects[0].object;
+        while (obj.parent && !obj.userData.onClickCallback) {
+          obj = obj.parent;
+        }
+
+        if (obj && obj.userData && obj.userData.onClickCallback) {
+          if (hoveredObject !== obj) {
+            hoveredObject = obj;
+            document.body.style.cursor = 'pointer';
+            showInteractionPrompt(`${obj.userData.name}: ${obj.userData.description}`);
+          }
+          return;
+        }
+      }
+
+      if (hoveredObject) {
+        hoveredObject = null;
+        document.body.style.cursor = 'default';
+        hideInteractionPrompt();
+      }
+    }
+
+    function triggerObjectInteraction() {
+      if (hoveredObject && hoveredObject.userData && hoveredObject.userData.onClickCallback) {
+        hoveredObject.userData.onClickCallback();
+        playSoundFX('click');
+      }
+    }
+
+    function showInteractionPrompt(text) {
+      const prompt = document.getElementById('interaction-prompt');
+      const promptText = document.getElementById('prompt-text');
+      if (prompt && promptText) {
+        promptText.innerText = text;
+        prompt.classList.remove('hidden');
+      }
+    }
+
+    function hideInteractionPrompt() {
+      const prompt = document.getElementById('interaction-prompt');
+      if (prompt) prompt.classList.add('hidden');
+    }
+
+    function setTimeOfDay(mode, shouldBroadcast = true) {
+      worldState.timeOfDay = mode;
+
+      if (mode === 'day') {
+        scene.background.setHex(0x7ec0ee);
+        scene.fog.color.setHex(0x7ec0ee);
+        if (skyMesh) skyMesh.material.color.setHex(0x7ec0ee);
+        if (sunLight) {
+          sunLight.color.setHex(0xfffaed);
+          sunLight.intensity = 1.2;
+          sunLight.position.set(30, 50, 20);
+        }
+        if (ambientLight) ambientLight.intensity = 0.65;
+      } else if (mode === 'sunset') {
+        scene.background.setHex(0xf97316);
+        scene.fog.color.setHex(0xf97316);
+        if (skyMesh) skyMesh.material.color.setHex(0xf97316);
+        if (sunLight) {
+          sunLight.color.setHex(0xfdba74);
+          sunLight.intensity = 0.9;
+          sunLight.position.set(50, 15, -20);
+        }
+        if (ambientLight) ambientLight.intensity = 0.45;
+      } else if (mode === 'night') {
+        scene.background.setHex(0x0f172a);
+        scene.fog.color.setHex(0x0f172a);
+        if (skyMesh) skyMesh.material.color.setHex(0x0f172a);
+        if (sunLight) {
+          sunLight.color.setHex(0x38bdf8);
+          sunLight.intensity = 0.25;
+          sunLight.position.set(-20, 40, -30);
+        }
+        if (ambientLight) ambientLight.intensity = 0.2;
+      }
+
+      if (shouldBroadcast) {
+        broadcastWorldState();
+        playSoundFX('pop');
+      }
+    }
+
+    function toggleFlyMode() {
+      isFlying = !isFlying;
+      document.getElementById('fly-text').innerText = `Fly ${isFlying ? 'ON' : 'Off'}`;
+      document.getElementById('btn-fly-toggle').classList.toggle('active', isFlying);
+      playSoundFX('pop');
+      if (!isFlying) {
+        isGrounded = false;
+      }
+      showNotification(isFlying ? "Flight Mode Enabled 🕊️" : "Landed Gracefully 🌿");
+    }
+
+    function toggleRunMode() {
+      isRunning = !isRunning;
+      const runText = document.getElementById('run-text');
+      const runBtn = document.getElementById('btn-run-toggle');
+      if (runText) runText.innerText = `Run ${isRunning ? 'ON' : 'Off'}`;
+      if (runBtn) runBtn.classList.toggle('active', isRunning);
+      playSoundFX('pop');
+      showNotification(isRunning ? "Running Mode Activated 🏃" : "Walking Pace 🚶");
+    }
+
+    function showNotification(message) {
+      const container = document.getElementById('toast-container');
+      if (!container) return;
+      const toast = document.createElement('div');
+      toast.className = 'glass-panel px-3.5 py-1.5 text-xs font-medium text-slate-100 border border-slate-700/80 shadow-lg animate-bounce';
+      toast.innerText = message;
+      container.appendChild(toast);
+      setTimeout(() => {
+        toast.remove();
+      }, 2500);
+    }
+
+    function setupTouchControlListeners() {
+      // Expanded detection for mobile clients, touch screens, and small viewport browsers
+      isTouchDevice = ('ontouchstart' in window) || 
+                       (navigator.maxTouchPoints > 0) || 
+                       (navigator.msMaxTouchPoints > 0) || 
+                       window.matchMedia("(pointer: coarse)").matches || 
+                       window.innerWidth <= 1024;
+
+      const bindTouchBtn = (id, keyName) => {
+        const btn = document.getElementById(id);
+        if (!btn) return;
+
+        const handleStart = (e) => {
+          if (e.cancelable) e.preventDefault();
+          e.stopPropagation();
+          mobileKeys[keyName] = true;
+          btn.classList.add('pressed');
+          initAudioContext();
+        };
+
+        const handleEnd = (e) => {
+          if (e.cancelable) e.preventDefault();
+          e.stopPropagation();
+          mobileKeys[keyName] = false;
+          btn.classList.remove('pressed');
+        };
+
+        btn.addEventListener('touchstart', handleStart, { passive: false });
+        btn.addEventListener('touchend', handleEnd, { passive: false });
+        btn.addEventListener('touchcancel', handleEnd, { passive: false });
+        
+        btn.addEventListener('pointerdown', (e) => {
+          if (e.pointerType === 'touch' || e.pointerType === 'pen') {
+            mobileKeys[keyName] = true;
+            btn.classList.add('pressed');
+            initAudioContext();
+          }
+        });
+        btn.addEventListener('pointerup', (e) => {
+          if (e.pointerType === 'touch' || e.pointerType === 'pen') {
+            mobileKeys[keyName] = false;
+            btn.classList.remove('pressed');
+          }
+        });
+        btn.addEventListener('pointercancel', (e) => {
+          if (e.pointerType === 'touch' || e.pointerType === 'pen') {
+            mobileKeys[keyName] = false;
+            btn.classList.remove('pressed');
+          }
+        });
+      };
+
+      bindTouchBtn('btn-touch-up', 'up');
+      bindTouchBtn('btn-touch-down', 'down');
+      bindTouchBtn('btn-touch-left', 'left');
+      bindTouchBtn('btn-touch-right', 'right');
+
+      const jumpBtn = document.getElementById('btn-touch-jump');
+      if (jumpBtn) {
+        const handleJump = (e) => {
+          if (e.cancelable) e.preventDefault();
+          e.stopPropagation();
+          initAudioContext();
+          if (isGrounded && !isFlying) {
+            playerVelocity.y = 0.28;
+            isGrounded = false;
+            playSoundFX('jump');
+            broadcastPlayerState();
+          }
+        };
+
+        jumpBtn.addEventListener('touchstart', handleJump, { passive: false });
+        jumpBtn.addEventListener('pointerdown', (e) => {
+          if (e.pointerType === 'touch' || e.pointerType === 'pen') handleJump(e);
+        });
+      }
+
+      // Canvas Touch Orbit Camera Controls
+      const canvasContainer = document.getElementById('canvas-container');
+      if (canvasContainer) {
+        canvasContainer.addEventListener('touchstart', (e) => {
+          if (e.touches.length === 1) {
+            isTouchingCanvas = true;
+            touchStartPos = { x: e.touches[0].clientX, y: e.touches[0].clientY };
+            
+            mouse.x = (e.touches[0].clientX / window.innerWidth) * 2 - 1;
+            mouse.y = -(e.touches[0].clientY / window.innerHeight) * 2 + 1;
+            checkRaycastInteractions();
+            triggerObjectInteraction();
+          }
+        }, { passive: false });
+
+        canvasContainer.addEventListener('touchmove', (e) => {
+          if (isTouchingCanvas && e.touches.length === 1) {
+            if (e.cancelable) e.preventDefault();
+            const deltaX = e.touches[0].clientX - touchStartPos.x;
+            const deltaY = e.touches[0].clientY - touchStartPos.y;
+
+            cameraAngle -= deltaX * 0.008;
+            cameraPitch = Math.max(0.1, Math.min(Math.PI / 2.2, cameraPitch + deltaY * 0.008));
+
+            touchStartPos = { x: e.touches[0].clientX, y: e.touches[0].clientY };
+          }
+        }, { passive: false });
+
+        canvasContainer.addEventListener('touchend', (e) => {
+          isTouchingCanvas = false;
+        }, { passive: false });
+      }
+
+      updateMobileControlsVisibility();
+    }
+
+    function toggleMobileControlsManual() {
+      forceShowTouchControls = !forceShowTouchControls;
+      updateMobileControlsVisibility();
+      showNotification(forceShowTouchControls ? "Touch Controls Forced ON" : "Touch Controls Auto Mode");
+    }
+
+    function updateMobileControlsVisibility() {
+      const controlsElem = document.getElementById('mobileControlsContainer');
+      if (!controlsElem) return;
+      const shouldShow = isTouchDevice || forceShowTouchControls || window.innerWidth <= 1024 || ('ontouchstart' in window);
+      controlsElem.style.display = shouldShow ? 'flex' : 'none';
+    }
+
+    function checkObstacleCollisions(targetPos, playerRadius = 0.6) {
+      for (let i = 0; i < colliderObstacles.length; i++) {
+        const obs = colliderObstacles[i];
+        const dx = targetPos.x - obs.pos.x;
+        const dz = targetPos.z - obs.pos.z;
+        const distance = Math.sqrt(dx * dx + dz * dz);
+        const minDist = obs.radius + playerRadius;
+        if (distance < minDist && distance > 0) {
+          const pushX = (dx / distance) * (minDist - distance);
+          const pushZ = (dz / distance) * (minDist - distance);
+          targetPos.x += pushX;
+          targetPos.z += pushZ;
+        }
+      }
+    }
+
+    function onWindowResize() {
+      camera.aspect = window.innerWidth / window.innerHeight;
+      camera.updateProjectionMatrix();
+      renderer.setSize(window.innerWidth, window.innerHeight);
+      updateMobileControlsVisibility();
+    }
+
+    // ==========================================
+    // 7. SCENE INIT & EVENT LISTENERS
+    // ==========================================
+    function initScene() {
+      const container = document.getElementById('canvas-container');
+
+      scene = new THREE.Scene();
+      scene.background = new THREE.Color(0x7ec0ee);
+      scene.fog = new THREE.FogExp2(0x7ec0ee, 0.008);
+
+      camera = new THREE.PerspectiveCamera(60, window.innerWidth / window.innerHeight, 0.1, 500);
+
+      // Create Spatial Audio Listener attached to Camera
+      audioListener = new THREE.AudioListener();
+      camera.add(audioListener);
+
+      renderer = new THREE.WebGLRenderer({ antialias: true });
+      renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+      renderer.setSize(window.innerWidth, window.innerHeight);
+      renderer.shadowMap.enabled = true;
+      container.appendChild(renderer.domElement);
+
+      clock = new THREE.Clock();
+
+      ambientLight = new THREE.AmbientLight(0xffffff, 0.65);
+      scene.add(ambientLight);
+
+      sunLight = new THREE.DirectionalLight(0xfffaed, 1.2);
+      sunLight.position.set(30, 50, 20);
+      sunLight.castShadow = true;
+      scene.add(sunLight);
+
+      buildSanctuaryEnvironment();
+      createLocalPlayer();
+
+      setTimeOfDay('day');
+      initNetwork();
+      setupEvents();
+      setupTouchControlListeners();
+
+      // Ensure position state is regularly broadcasted even on mobile touch input devices
+      setInterval(() => {
+        if (localPlayerGroup) {
+          broadcastPlayerState();
+        }
+      }, 100);
+
+      animate();
+    }
+
+    function setupEvents() {
+      window.addEventListener('keydown', (e) => {
+        const code = e.code;
+        if (code === 'KeyW' || code === 'ArrowUp') keys.w = true;
+        if (code === 'KeyS' || code === 'ArrowDown') keys.s = true;
+        if (code === 'KeyA' || code === 'ArrowLeft') keys.a = true;
+        if (code === 'KeyD' || code === 'ArrowRight') keys.d = true;
+
+        if (code === 'Space') {
+          e.preventDefault();
+          if (isGrounded && !isFlying) {
+            playerVelocity.y = 0.28;
+            isGrounded = false;
+            playSoundFX('jump');
+          }
+        }
+
+        if (code === 'ShiftLeft' || code === 'ShiftRight') {
+          toggleRunMode();
+        }
+      });
+
+      window.addEventListener('keyup', (e) => {
+        const code = e.code;
+        if (code === 'KeyW' || code === 'ArrowUp') keys.w = false;
+        if (code === 'KeyS' || code === 'ArrowDown') keys.s = false;
+        if (code === 'KeyA' || code === 'ArrowLeft') keys.a = false;
+        if (code === 'KeyD' || code === 'ArrowRight') keys.d = false;
+      });
+
+      window.addEventListener('mousedown', (e) => {
+        if (e.button === 2) {
+          isRightMouseDown = true;
+          previousMousePosition = { x: e.clientX, y: e.clientY };
+        } else if (e.button === 0) {
+          triggerObjectInteraction();
+        }
+      });
+
+      window.addEventListener('mouseup', (e) => {
+        if (e.button === 2) isRightMouseDown = false;
+      });
+
+      window.addEventListener('mousemove', (e) => {
+        mouse.x = (e.clientX / window.innerWidth) * 2 - 1;
+        mouse.y = -(e.clientY / window.innerHeight) * 2 + 1;
+        checkRaycastInteractions();
+
+        if (isRightMouseDown) {
+          const deltaX = e.clientX - previousMousePosition.x;
+          const deltaY = e.clientY - previousMousePosition.y;
+
+          cameraAngle -= deltaX * 0.005;
+          cameraPitch = Math.max(0.1, Math.min(Math.PI / 2.2, cameraPitch + deltaY * 0.005));
+
+          previousMousePosition = { x: e.clientX, y: e.clientY };
+        }
+      });
+
+      window.addEventListener('contextmenu', (e) => e.preventDefault());
+
+      window.addEventListener('wheel', (e) => {
+        cameraDistance = Math.max(minDistance, Math.min(maxDistance, cameraDistance + e.deltaY * 0.01));
+      }, { passive: true });
+
+      window.addEventListener('resize', onWindowResize);
+    }
+
+    // ==========================================
+    // 8. MAIN ANIMATION & RENDERING LOOP
+    // ==========================================
+    function animate() {
+      requestAnimationFrame(animate);
+
+      const delta = clock.getDelta();
+      const time = clock.getElapsedTime();
+
+      if (localPlayerGroup) {
+        const moveForward = keys.w || mobileKeys.up;
+        const moveBackward = keys.s || mobileKeys.down;
+        const rotateLeft = keys.a || mobileKeys.left;
+        const rotateRight = keys.d || mobileKeys.right;
+
+        if (rotateLeft) cameraAngle += 2.0 * delta;
+        if (rotateRight) cameraAngle -= 2.0 * delta;
+
+        const isMoving = moveForward || moveBackward;
+        const moveSpeed = isRunning ? 12.0 : 6.0;
+
+        if (isMoving) {
+          currentEmote = null;
+          const dir = moveForward ? 1 : -1;
+          const moveX = -Math.sin(cameraAngle) * moveSpeed * delta * dir;
+          const moveZ = -Math.cos(cameraAngle) * moveSpeed * delta * dir;
+
+          localPlayerGroup.position.x += moveX;
+          localPlayerGroup.position.z += moveZ;
+
+          localPlayerGroup.rotation.y = cameraAngle + (moveForward ? Math.PI : 0);
+        }
+
+        checkObstacleCollisions(localPlayerGroup.position);
+
+        if (isFlying) {
+          localPlayerGroup.position.y = 4 + Math.sin(time * 3) * 0.4;
+        } else {
+          if (!isGrounded || localPlayerGroup.position.y > 0.2) {
+            playerVelocity.y -= 0.8 * delta;
+            localPlayerGroup.position.y += playerVelocity.y;
+
+            if (localPlayerGroup.position.y <= 0.2) {
+              localPlayerGroup.position.y = 0.2;
+              playerVelocity.y = 0;
+              isGrounded = true;
+            }
+          }
+        }
+
+        const dist = Math.sqrt(localPlayerGroup.position.x ** 2 + localPlayerGroup.position.z ** 2);
+        if (dist > 42) {
+          localPlayerGroup.position.x *= 0.98;
+          localPlayerGroup.position.z *= 0.98;
+        }
+
+        updateCharacterAnimations(localPlayerGroup, time, isMoving, isRunning, isFlying, currentEmote);
+      }
+
+      Object.keys(remotePlayers).forEach(id => {
+        const peer = remotePlayers[id];
+        if (peer && peer.userData.targetPosition) {
+          const lerpSpeed = Math.min(1.0, delta * 15.0);
+          
+          const distToTarget = peer.position.distanceTo(peer.userData.targetPosition);
+          peer.userData.isMoving = distToTarget > 0.05;
+
+          peer.position.lerp(peer.userData.targetPosition, lerpSpeed);
+
+          if (peer.userData.targetRotation !== undefined) {
+            let diff = peer.userData.targetRotation - peer.rotation.y;
+            diff = Math.atan2(Math.sin(diff), Math.cos(diff));
+            peer.rotation.y += diff * lerpSpeed;
+          }
+
+          updateCharacterAnimations(
+            peer,
+            time,
+            peer.userData.isMoving,
+            peer.userData.isRunning || false,
+            peer.userData.isFlying || false,
+            peer.userData.currentEmote || null
+          );
+        }
+      });
+
+      // Third-person Camera Tracking
+      if (localPlayerGroup) {
+        const targetPos = localPlayerGroup.position.clone().add(new THREE.Vector3(0, 1.8, 0));
+        const offsetX = Math.sin(cameraAngle) * Math.cos(cameraPitch) * cameraDistance;
+        const offsetY = Math.sin(cameraPitch) * cameraDistance;
+        const offsetZ = Math.cos(cameraAngle) * Math.cos(cameraPitch) * cameraDistance;
+
+        camera.position.set(targetPos.x + offsetX, targetPos.y + offsetY, targetPos.z + offsetZ);
+        camera.lookAt(targetPos);
+      }
+
+      floatingIndicators.forEach(ind => {
+        ind.rotation.z += 0.02;
+        ind.lookAt(camera.position);
+      });
+
+      renderer.render(scene, camera);
+    }
+
+    window.onload = function() {
+      initScene();
+    };
+  </script>
+</body>
+</html>
